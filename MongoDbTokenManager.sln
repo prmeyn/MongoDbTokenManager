@@ -1,0 +1,33 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34511.84
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MongoDbTokenManager", "MongoDbTokenManager\MongoDbTokenManager.csproj", "{9CA56CD1-2F60-4AE3-9B9F-044323D4CC60}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "SolutionFiles", "SolutionFiles", "{4FE21CC4-3F82-4B9B-896F-78F715E13CEB}"
+	ProjectSection(SolutionItems) = preProject
+		.gitignore = .gitignore
+		LICENSE = LICENSE
+		README.md = README.md
+		.github\workflows\release.yml = .github\workflows\release.yml
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9CA56CD1-2F60-4AE3-9B9F-044323D4CC60}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9CA56CD1-2F60-4AE3-9B9F-044323D4CC60}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9CA56CD1-2F60-4AE3-9B9F-044323D4CC60}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9CA56CD1-2F60-4AE3-9B9F-044323D4CC60}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {FED72D9A-4796-40E9-8CB2-E230B0DC1696}
+	EndGlobalSection
+EndGlobal

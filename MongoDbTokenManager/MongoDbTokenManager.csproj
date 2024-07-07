@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MongoDbService" Version="2.0.0" />
+    <PackageReference Include="MongoDbService" Version="3.1.0" />
 
 	<None Include="../LICENSE" Pack="true" PackagePath="\" />
 	<None Include="../README.md" Pack="true" PackagePath="\" />

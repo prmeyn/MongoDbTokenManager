@@ -54,7 +54,7 @@ namespace YourNameSpace
 
 		public async Task<bool> Verifiy(string id, string OTT) // id along with the generated One Time Token
 		{
-			return await _mongoDbTokenService.ConsumeAndValidate(id, OTT); // You only get one chance if if you want more use `Consume` and `Validate` separately. 
+			return await _mongoDbTokenService.ConsumeAndValidate(id, OTT); // You only get one chance, if you want more use `Consume` and `Validate` separately. 
 		}
 	}
 }

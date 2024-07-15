@@ -9,7 +9,7 @@
 
         public async Task<GeneratedCode> GenerateCode(string logId, TokenIdentifier id, int validityInSeconds, string relativeUrl, int numberOfDigits = 0)
         {
-            var code = await Generate(logId, id, validityInSeconds);
+            var code = await Generate(logId, id, validityInSeconds, numberOfDigits);
             return await Task.FromResult<GeneratedCode>(new GeneratedCode(Code: code, QrCodeRelativeUrl: $"{relativeUrl}{code}/{id}"));
         }
     }

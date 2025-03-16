@@ -62,7 +62,12 @@ namespace MongoDbTokenManager.Database
 
 			var tokenInDb = await _tokenCollection.Find(filter).FirstOrDefaultAsync();
 
-            if (tokenInDb.ValidationAttemptsTimeStamps == null || tokenInDb.ValidationAttemptsTimeStamps.Count() == 0)
+			if (tokenInDb == null) // Null check added
+			{
+				return false;
+			}
+
+			if (tokenInDb.ValidationAttemptsTimeStamps == null || tokenInDb.ValidationAttemptsTimeStamps.Count() == 0)
             {
                 tokenInDb.ValidationAttemptsTimeStamps = [DateTimeOffset.UtcNow];
             }

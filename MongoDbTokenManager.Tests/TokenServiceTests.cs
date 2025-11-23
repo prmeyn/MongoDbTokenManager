@@ -8,8 +8,10 @@ namespace MongoDbTokenManager.Tests;
 
 public class TokenServiceTests
 {
-    [Fact]
-    public async Task GenerateAndValidateToken_Success()
+    [Theory]
+    [InlineData(6)]
+    [InlineData(0)]
+    public async Task GenerateAndValidateToken_Success(int numberOfDigits)
     {
         // Arrange
         // Use a connection string from environment variable or default to localhost for local testing
@@ -35,11 +37,18 @@ public class TokenServiceTests
         try
         {
             // Act
-            var token = await tokenService.Generate(logId, tokenId, 300, 6);
+            var token = await tokenService.Generate(logId, tokenId, 300, numberOfDigits);
 
             // Assert
             Assert.NotNull(token);
-            Assert.Equal(6, token.Length);
+            if (numberOfDigits > 0)
+            {
+                Assert.Equal(numberOfDigits, token.Length);
+            }
+            else
+            {
+                Assert.True(token.Length > 0); // GUID length varies but is > 0
+            }
 
             var isValid = await tokenService.Validate(tokenId, token);
             Assert.True(isValid);
@@ -57,8 +66,10 @@ public class TokenServiceTests
         }
     }
 
-    [Fact]
-    public async Task GenerateToken_ExpiresAfterValidityPeriod()
+    [Theory]
+    [InlineData(6)]
+    [InlineData(0)]
+    public async Task GenerateToken_ExpiresAfterValidityPeriod(int numberOfDigits)
     {
         // Arrange
         var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
@@ -82,7 +93,7 @@ public class TokenServiceTests
         try
         {
             // Act
-            var token = await tokenService.Generate(logId, tokenId, 1, 6); // 1 second validity
+            var token = await tokenService.Generate(logId, tokenId, 1, numberOfDigits); // 1 second validity
 
             // Assert
             Assert.NotNull(token);

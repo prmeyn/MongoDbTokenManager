@@ -21,7 +21,7 @@ public class TokenServiceTests
         var myConfiguration = new Dictionary<string, string>
         {
             {"MongoDbSettings:ConnectionString", connectionString},
-            {"MongoDbSettings:MongoDatabaseName", databaseName}
+            {"MongoDbSettings:DatabaseName", databaseName}
         };
 
         var configuration = new ConfigurationBuilder()
@@ -78,7 +78,7 @@ public class TokenServiceTests
         var myConfiguration = new Dictionary<string, string>
         {
             {"MongoDbSettings:ConnectionString", connectionString},
-            {"MongoDbSettings:MongoDatabaseName", databaseName}
+            {"MongoDbSettings:DatabaseName", databaseName}
         };
 
         var configuration = new ConfigurationBuilder()
@@ -123,7 +123,7 @@ public class TokenServiceTests
         var myConfiguration = new Dictionary<string, string>
         {
             {"MongoDbSettings:ConnectionString", connectionString},
-            {"MongoDbSettings:MongoDatabaseName", databaseName}
+            {"MongoDbSettings:DatabaseName", databaseName}
         };
 
         var configuration = new ConfigurationBuilder()
@@ -175,7 +175,7 @@ public class TokenServiceTests
         var myConfiguration = new Dictionary<string, string>
         {
             {"MongoDbSettings:ConnectionString", connectionString},
-            {"MongoDbSettings:MongoDatabaseName", databaseName}
+            {"MongoDbSettings:DatabaseName", databaseName}
         };
 
         var configuration = new ConfigurationBuilder()
@@ -226,7 +226,7 @@ public class TokenServiceTests
         var myConfiguration = new Dictionary<string, string>
         {
             {"MongoDbSettings:ConnectionString", connectionString},
-            {"MongoDbSettings:MongoDatabaseName", databaseName}
+            {"MongoDbSettings:DatabaseName", databaseName}
         };
 
         var configuration = new ConfigurationBuilder()

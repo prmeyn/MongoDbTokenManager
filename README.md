@@ -27,7 +27,7 @@ Configure your MongoDB connection settings in your `appsettings.json` or environ
 {
   "MongoDbSettings": {
     "ConnectionString": "mongodb://localhost:27017",
-    "MongoDatabaseName": "YourDatabaseName"
+    "DatabaseName": "YourDatabaseName"
   }
 }
 ```

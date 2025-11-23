@@ -164,4 +164,55 @@ public class TokenServiceTests
             await mongoService.Database.Client.DropDatabaseAsync(databaseName);
         }
     }
+
+    [Fact]
+    public async Task ValidateToken_FailsAfterMaxAttempts()
+    {
+        // Arrange
+        var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
+        var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
+        
+        var myConfiguration = new Dictionary<string, string>
+        {
+            {"MongoDbSettings:ConnectionString", connectionString},
+            {"MongoDbSettings:MongoDatabaseName", databaseName}
+        };
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(myConfiguration)
+            .Build();
+
+        var mongoService = new MongoService(configuration, NullLogger<MongoService>.Instance);
+        var tokenService = new MongoDbTokenService(mongoService);
+        var tokenId = new TokenIdentifier("test-user-max-attempts");
+        var logId = "test-log-id-max-attempts";
+
+        try
+        {
+            // Act
+            var token = await tokenService.Generate(logId, tokenId, 300, 6);
+
+            // Assert
+            Assert.NotNull(token);
+
+            // Fail 5 times (MAXIMUM_ATTEMPTS)
+            var invalidToken = "000000";
+            if (invalidToken == token) invalidToken = "111111";
+
+            for (int i = 0; i < 5; i++)
+            {
+                var isValidInvalid = await tokenService.Validate(tokenId, invalidToken);
+                Assert.False(isValidInvalid, $"Attempt {i + 1} should fail");
+            }
+
+            // Try valid token - should fail because max attempts reached
+            var isValid = await tokenService.Validate(tokenId, token);
+            Assert.False(isValid, "Validation should fail after max attempts reached, even with correct token");
+        }
+        finally
+        {
+            // Cleanup
+            await mongoService.Database.Client.DropDatabaseAsync(databaseName);
+        }
+    }
 }

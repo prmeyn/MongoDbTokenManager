@@ -32,17 +32,11 @@ namespace MongoDbTokenManager.Database
         {
             string oneTimeToken;
             var tokenInDb = await _tokenCollection.Find(Filter(id)).FirstOrDefaultAsync();
-            if (tokenInDb != null &&
-                tokenInDb.Token.Valid(tokenInDb.Token.OneTimeToken) &&
-                (numberOfDigits > 0 ? tokenInDb.Token.OneTimeToken.Length == numberOfDigits : true))
+            if (tokenInDb is not null)
             {
-                oneTimeToken = tokenInDb.Token.OneTimeToken;
                 await Consume(id);
             }
-            else
-            {
-                oneTimeToken = (numberOfDigits > 0) ? Utils.GetRandomNumber(numberOfDigits) : Guid.NewGuid().ToString().ToLowerInvariant();
-            }
+            oneTimeToken = (numberOfDigits > 0) ? Utils.GetRandomNumber(numberOfDigits) : Guid.NewGuid().ToString().ToLowerInvariant();
 
             var idAsString = id.ToString();
             var filter = Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);

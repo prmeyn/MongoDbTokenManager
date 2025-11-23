@@ -110,4 +110,58 @@ public class TokenServiceTests
             await mongoService.Database.Client.DropDatabaseAsync(databaseName);
         }
     }
+
+    [Theory]
+    [InlineData(6)]
+    [InlineData(0)]
+    public async Task ValidateToken_FailsForInvalidToken_SucceedsForValidToken(int numberOfDigits)
+    {
+        // Arrange
+        var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
+        var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
+        
+        var myConfiguration = new Dictionary<string, string>
+        {
+            {"MongoDbSettings:ConnectionString", connectionString},
+            {"MongoDbSettings:MongoDatabaseName", databaseName}
+        };
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(myConfiguration)
+            .Build();
+
+        var mongoService = new MongoService(configuration, NullLogger<MongoService>.Instance);
+        var tokenService = new MongoDbTokenService(mongoService);
+        var tokenId = new TokenIdentifier("test-user-invalid-check");
+        var logId = "test-log-id-invalid-check";
+
+        try
+        {
+            // Act
+            var token = await tokenService.Generate(logId, tokenId, 300, numberOfDigits);
+
+            // Assert
+            Assert.NotNull(token);
+
+            // Try invalid token
+            var invalidToken = "invalid-token";
+            if (numberOfDigits > 0) 
+            {
+                invalidToken = new string('0', numberOfDigits);
+                if (invalidToken == token) invalidToken = new string('1', numberOfDigits); // Ensure it's different
+            }
+            
+            var isValidInvalid = await tokenService.Validate(tokenId, invalidToken);
+            Assert.False(isValidInvalid, "Validation should fail for incorrect token");
+
+            // Try valid token
+            var isValid = await tokenService.Validate(tokenId, token);
+            Assert.True(isValid, "Validation should succeed for correct token");
+        }
+        finally
+        {
+            // Cleanup
+            await mongoService.Database.Client.DropDatabaseAsync(databaseName);
+        }
+    }
 }

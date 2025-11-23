@@ -41,7 +41,7 @@ namespace MongoDbTokenManager.Database
             var idAsString = id.ToString();
             var filter = Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);
             var options = new ReplaceOptions { IsUpsert = true };
-            await _tokenCollection.ReplaceOneAsync(filter, new Tokens() { LogId = logId, Id = idAsString, Token = new TokenValue(oneTimeToken, validityInSeconds) }, options);
+            await _tokenCollection.ReplaceOneAsync(filter, new Tokens() { LogId = logId, Id = idAsString, Token = new TokenValue(salt: idAsString, oneTimeToken, validityInSeconds) }, options);
             return await Task.FromResult(oneTimeToken);
         }
 
@@ -74,7 +74,12 @@ namespace MongoDbTokenManager.Database
 			var options = new ReplaceOptions { IsUpsert = true };
 			_ = _tokenCollection.ReplaceOneAsync(filter, tokenInDb, options);
 
-			return await Task.FromResult(tokenInDb?.Token?.Valid(token) ?? false);
+            if(tokenInDb.ValidationAttemptsTimeStamps.Count() >= MAXIMUM_ATTEMPTS)
+			{
+				return false;
+			}
+
+			return await Task.FromResult(tokenInDb?.Token?.Valid(salt: idAsString, token) ?? false);
         }
     }
 }

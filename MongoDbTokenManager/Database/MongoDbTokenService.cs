@@ -7,8 +7,9 @@ namespace MongoDbTokenManager.Database
 	public sealed class MongoDbTokenService : AbstractTokenService
     {
         private IMongoCollection<Tokens> _tokenCollection;
+		private readonly int MAXIMUM_ATTEMPTS = 5;
 
-        public MongoDbTokenService(
+		public MongoDbTokenService(
 			MongoService mongoService)
         {
             _tokenCollection = mongoService.Database.GetCollection<Tokens>(nameof(Tokens), new MongoCollectionSettings() { ReadConcern = ReadConcern.Majority, WriteConcern = WriteConcern.WMajority });

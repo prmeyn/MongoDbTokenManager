@@ -5,18 +5,15 @@ namespace MongoDbTokenManager
     public sealed class TokenValue
     {
         public string OneTimeTokenHash { get; private set; }
-        public DateTime ValidUntilUtc { get; private set; }
 
-        public TokenValue(string salt, string oneTimeToken, int vaildityInSeconds)
+        public TokenValue(string salt, string oneTimeToken)
         {
             this.OneTimeTokenHash = ComputeOneTimeToken(salt, oneTimeToken);
-            ValidUntilUtc = DateTime.UtcNow.AddSeconds(vaildityInSeconds);
         }
 
-
-        public bool Valid(string salt, string oneTimeToken)
+        public bool Valid(string salt, string oneTimeToken, DateTime expiresAt)
         {
-            return OneTimeTokenHash == ComputeOneTimeToken(salt, oneTimeToken) && DateTime.UtcNow <= ValidUntilUtc;
+            return OneTimeTokenHash == ComputeOneTimeToken(salt, oneTimeToken) && DateTime.UtcNow <= expiresAt;
         }
 
         private string ComputeOneTimeToken(string salt, string oneTimeToken) => CryptoUtils.ComputeSha512Hash($"{salt.ToLowerInvariant()}####{oneTimeToken.ToLowerInvariant()}");

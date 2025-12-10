@@ -7,12 +7,20 @@ namespace MongoDbTokenManager.Database
 	public sealed class MongoDbTokenService : AbstractTokenService
     {
         private IMongoCollection<Tokens> _tokenCollection;
-		private readonly int MAXIMUM_ATTEMPTS = 5;
 
 		public MongoDbTokenService(
-			MongoService mongoService)
+			MongoService mongoService,
+			TimeSpan? cleanupAfterExpiry = null)
         {
             _tokenCollection = mongoService.Database.GetCollection<Tokens>(nameof(Tokens), new MongoCollectionSettings() { ReadConcern = ReadConcern.Majority, WriteConcern = WriteConcern.WMajority });
+
+            var ttlExpiry = cleanupAfterExpiry ?? TimeSpan.FromHours(24);
+            var indexKeysDefinition = Builders<Tokens>.IndexKeys.Ascending(t => t.ExpiresAt);
+            var indexModel = new CreateIndexModel<Tokens>(
+                indexKeysDefinition,
+                new CreateIndexOptions { ExpireAfter = ttlExpiry }
+            );
+            _tokenCollection.Indexes.CreateOne(indexModel);
         }
 
         private FilterDefinition<Tokens> Filter(TokenIdentifier id) => Builders<Tokens>.Filter.Eq(t => t.Id, id.ToString());
@@ -42,7 +50,9 @@ namespace MongoDbTokenManager.Database
             var idAsString = id.ToString();
             var filter = Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);
             var options = new ReplaceOptions { IsUpsert = true };
-            await _tokenCollection.ReplaceOneAsync(filter, new Tokens() { LogId = logId, Id = idAsString, Token = new TokenValue(salt: idAsString, oneTimeToken, validityInSeconds) }, options);
+            var tokenValue = new TokenValue(salt: idAsString, oneTimeToken);
+            var expiresAt = DateTime.UtcNow.AddSeconds(validityInSeconds);
+            await _tokenCollection.ReplaceOneAsync(filter, new Tokens() { LogId = logId, Id = idAsString, Token = tokenValue, ExpiresAt = expiresAt }, options);
             return await Task.FromResult(oneTimeToken);
         }
 
@@ -62,25 +72,7 @@ namespace MongoDbTokenManager.Database
 				return false;
 			}
 
-			if (tokenInDb.ValidationAttemptsTimeStamps == null || tokenInDb.ValidationAttemptsTimeStamps.Count() == 0)
-            {
-                tokenInDb.ValidationAttemptsTimeStamps = [DateTimeOffset.UtcNow];
-            }
-            else
-            {
-                tokenInDb.ValidationAttemptsTimeStamps.Add(DateTimeOffset.UtcNow);
-			}
-
-			
-			var options = new ReplaceOptions { IsUpsert = true };
-			_ = _tokenCollection.ReplaceOneAsync(filter, tokenInDb, options);
-
-            if(tokenInDb.ValidationAttemptsTimeStamps.Count() >= MAXIMUM_ATTEMPTS)
-			{
-				return false;
-			}
-
-			return await Task.FromResult(tokenInDb?.Token?.Valid(salt: idAsString, token) ?? false);
+			return await Task.FromResult(tokenInDb?.Token?.Valid(salt: idAsString, token, tokenInDb.ExpiresAt) ?? false);
         }
     }
 }

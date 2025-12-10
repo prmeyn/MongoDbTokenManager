@@ -5,7 +5,8 @@
 ## Features
 
 - **Token Generation**: Generate numeric codes (e.g., for SMS) or GUID-based tokens (e.g., for email links).
-- **Secure Validation**: Verify tokens with built-in expiration and maximum attempt limits (default: 5 attempts).
+- **Secure Validation**: Verify tokens with built-in expiration checks.
+- **Automatic Cleanup**: Expired tokens are automatically deleted using MongoDB TTL indexes (default: 24 hours after expiry).
 - **Distributed & Scalable**: Uses MongoDB for storage, allowing different service instances to generate and verify tokens independently.
 - **Strongly Typed IDs**: Uses `TokenIdentifier` to ensure type safety for user or resource IDs.
 
@@ -85,11 +86,8 @@ public class AuthenticationService
 
     public async Task<bool> VerifyCode(string userId, string code)
     {
-        // Verify the token. 
-        // Returns false if:
-        // - Token is expired
-        // - Token does not match
-        // - Maximum validation attempts (5) have been exceeded
+        // Verify the token.
+        // Returns false if token is expired or does not match.
         bool isValid = await _tokenService.Validate(new TokenIdentifier(userId), code);
 
         if (isValid)
@@ -120,14 +118,31 @@ Creates a new token or updates an existing one if valid.
 
 ### `Validate`
 Checks if a token is valid.
-- Returns `true` if the token matches, is not expired, and attempt limit is not reached.
-- **Note**: Allows up to **5 validation attempts**. After that, the token becomes invalid regardless of correctness.
+- Returns `true` if the token matches and is not expired.
+- **Note**: This package does not include brute-force protection. Implement rate limiting at your API layer if needed.
 
 ### `Consume`
 Deletes the token associated with the identifier, preventing further use.
 
 ### `ConsumeAndValidate`
 Validates the token and immediately consumes it (deletes it) regardless of the result. Useful for strict one-time-use scenarios.
+
+## Configuration Options
+
+### Automatic Token Cleanup
+
+Expired tokens are automatically cleaned up by MongoDB using a TTL index. By default, tokens are deleted **24 hours after expiry**. You can customize this when registering the service:
+
+```csharp
+// Custom cleanup: delete tokens 1 hour after expiry
+builder.Services.AddSingleton(sp =>
+    new MongoDbTokenService(
+        sp.GetRequiredService<MongoService>(),
+        cleanupAfterExpiry: TimeSpan.FromHours(1)
+    ));
+```
+
+Set to `TimeSpan.Zero` to delete tokens immediately upon expiry.
 
 ## Contributing
 

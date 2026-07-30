@@ -6,8 +6,9 @@ namespace MongoDbTokenManager
 
         public TokenIdentifier(string value)
         {
+            ArgumentNullException.ThrowIfNull(value);
             this.value = value.ToLowerInvariant().Trim();
-            if (string.IsNullOrWhiteSpace(this.value)) { throw new Exception($"Invalid ID>>{value}<<"); }
+            if (string.IsNullOrWhiteSpace(this.value)) { throw new ArgumentException("The token identifier must not be blank.", nameof(value)); }
         }
 
         public override bool Equals(object? obj)

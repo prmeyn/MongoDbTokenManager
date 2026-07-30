@@ -42,13 +42,10 @@ namespace MongoDbTokenManager.Database
 
         public override async Task<string> Generate(string logId, TokenIdentifier id, int validityInSeconds, int numberOfDigits = 0)
         {
-            string oneTimeToken;
-            var tokenInDb = await _tokenCollection.Find(Filter(id)).FirstOrDefaultAsync();
-            if (tokenInDb is not null)
-            {
-                await Consume(id);
-            }
-            oneTimeToken = (numberOfDigits > 0) ? Utils.GetRandomNumber(numberOfDigits) : Guid.NewGuid().ToString().ToLowerInvariant();
+            // No need to look for and delete an existing token first: the upsert below
+            // replaces it in a single round trip, and deleting it beforehand left a window
+            // in which a concurrent Validate saw no token at all.
+            var oneTimeToken = (numberOfDigits > 0) ? Utils.GetRandomNumber(numberOfDigits) : Guid.NewGuid().ToString().ToLowerInvariant();
 
             var idAsString = id.ToString();
             var filter = Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);

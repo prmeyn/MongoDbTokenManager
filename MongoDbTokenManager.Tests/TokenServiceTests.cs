@@ -1,7 +1,3 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging.Abstractions;
-using MongoDbService;
-using MongoDbTokenManager.Database;
 using Xunit;
 
 namespace MongoDbTokenManager.Tests;
@@ -13,57 +9,24 @@ public class TokenServiceTests
     [InlineData(0)]
     public async Task GenerateAndValidateToken_Success(int numberOfDigits)
     {
-        // Arrange
-        // Use a connection string from environment variable or default to localhost for local testing
-        var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
-        var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
-        
-        var myConfiguration = new Dictionary<string, string?>
-        {
-            {"MongoDbSettings:ConnectionString", connectionString},
-            {"MongoDbSettings:DatabaseName", databaseName}
-        };
-
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(myConfiguration)
-            .Build();
-
-        var mongoService = new MongoService(configuration, NullLogger<MongoService>.Instance);
-
-        var tokenService = new MongoDbTokenService(mongoService);
+        await using var fixture = new MongoIntegrationFixture();
         var tokenId = new TokenIdentifier("test-user");
-        var logId = "test-log-id";
 
-        try
+        var token = await fixture.TokenService.Generate("test-log-id", tokenId, 300, numberOfDigits);
+
+        Assert.NotNull(token);
+        if (numberOfDigits > 0)
         {
-            // Act
-            var token = await tokenService.Generate(logId, tokenId, 300, numberOfDigits);
-
-            // Assert
-            Assert.NotNull(token);
-            if (numberOfDigits > 0)
-            {
-                Assert.Equal(numberOfDigits, token.Length);
-            }
-            else
-            {
-                Assert.True(token.Length > 0); // GUID length varies but is > 0
-            }
-
-            var isValid = await tokenService.Validate(tokenId, token);
-            Assert.True(isValid);
-
-            var isConsumed = await tokenService.ConsumeAndValidate(tokenId, token);
-            Assert.True(isConsumed);
-
-            var isValidAfterConsume = await tokenService.Validate(tokenId, token);
-            Assert.False(isValidAfterConsume);
+            Assert.Equal(numberOfDigits, token.Length);
         }
-        finally
+        else
         {
-            // Cleanup
-            await mongoService.Database.Client.DropDatabaseAsync(databaseName, TestContext.Current.CancellationToken);
+            Assert.True(token.Length > 0); // GUID length varies but is > 0
         }
+
+        Assert.True(await fixture.TokenService.Validate(tokenId, token));
+        Assert.True(await fixture.TokenService.ConsumeAndValidate(tokenId, token));
+        Assert.False(await fixture.TokenService.Validate(tokenId, token));
     }
 
     [Theory]
@@ -71,44 +34,15 @@ public class TokenServiceTests
     [InlineData(0)]
     public async Task GenerateToken_ExpiresAfterValidityPeriod(int numberOfDigits)
     {
-        // Arrange
-        var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
-        var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
-        
-        var myConfiguration = new Dictionary<string, string?>
-        {
-            {"MongoDbSettings:ConnectionString", connectionString},
-            {"MongoDbSettings:DatabaseName", databaseName}
-        };
-
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(myConfiguration)
-            .Build();
-
-        var mongoService = new MongoService(configuration, NullLogger<MongoService>.Instance);
-        var tokenService = new MongoDbTokenService(mongoService);
+        await using var fixture = new MongoIntegrationFixture();
         var tokenId = new TokenIdentifier("test-user-expiration");
-        var logId = "test-log-id-expiration";
 
-        try
-        {
-            // Act
-            var token = await tokenService.Generate(logId, tokenId, 1, numberOfDigits); // 1 second validity
+        var token = await fixture.TokenService.Generate("test-log-id-expiration", tokenId, 1, numberOfDigits);
+        Assert.NotNull(token);
 
-            // Assert
-            Assert.NotNull(token);
-            
-            // Wait for expiration
-            await Task.Delay(2000, TestContext.Current.CancellationToken);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
 
-            var isValid = await tokenService.Validate(tokenId, token);
-            Assert.False(isValid, "Token should be invalid after expiration period");
-        }
-        finally
-        {
-            // Cleanup
-            await mongoService.Database.Client.DropDatabaseAsync(databaseName, TestContext.Current.CancellationToken);
-        }
+        Assert.False(await fixture.TokenService.Validate(tokenId, token), "Token should be invalid after expiration period");
     }
 
     [Theory]
@@ -116,97 +50,113 @@ public class TokenServiceTests
     [InlineData(0)]
     public async Task ValidateToken_FailsForInvalidToken_SucceedsForValidToken(int numberOfDigits)
     {
-        // Arrange
-        var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
-        var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
-        
-        var myConfiguration = new Dictionary<string, string?>
-        {
-            {"MongoDbSettings:ConnectionString", connectionString},
-            {"MongoDbSettings:DatabaseName", databaseName}
-        };
-
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(myConfiguration)
-            .Build();
-
-        var mongoService = new MongoService(configuration, NullLogger<MongoService>.Instance);
-        var tokenService = new MongoDbTokenService(mongoService);
+        await using var fixture = new MongoIntegrationFixture();
         var tokenId = new TokenIdentifier("test-user-invalid-check");
-        var logId = "test-log-id-invalid-check";
 
-        try
+        var token = await fixture.TokenService.Generate("test-log-id-invalid-check", tokenId, 300, numberOfDigits);
+        Assert.NotNull(token);
+
+        var invalidToken = "invalid-token";
+        if (numberOfDigits > 0)
         {
-            // Act
-            var token = await tokenService.Generate(logId, tokenId, 300, numberOfDigits);
-
-            // Assert
-            Assert.NotNull(token);
-
-            // Try invalid token
-            var invalidToken = "invalid-token";
-            if (numberOfDigits > 0) 
-            {
-                invalidToken = new string('0', numberOfDigits);
-                if (invalidToken == token) invalidToken = new string('1', numberOfDigits); // Ensure it's different
-            }
-            
-            var isValidInvalid = await tokenService.Validate(tokenId, invalidToken);
-            Assert.False(isValidInvalid, "Validation should fail for incorrect token");
-
-            // Try valid token
-            var isValid = await tokenService.Validate(tokenId, token);
-            Assert.True(isValid, "Validation should succeed for correct token");
+            invalidToken = new string('0', numberOfDigits);
+            if (invalidToken == token) invalidToken = new string('1', numberOfDigits); // Ensure it's different
         }
-        finally
-        {
-            // Cleanup
-            await mongoService.Database.Client.DropDatabaseAsync(databaseName, TestContext.Current.CancellationToken);
-        }
+
+        Assert.False(await fixture.TokenService.Validate(tokenId, invalidToken), "Validation should fail for incorrect token");
+        Assert.True(await fixture.TokenService.Validate(tokenId, token), "Validation should succeed for correct token");
     }
 
     [Fact]
     public async Task ConsumeAndValidate_ValidatesAndRemovesToken()
     {
-        // Arrange
-        var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
-        var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
-        
-        var myConfiguration = new Dictionary<string, string?>
-        {
-            {"MongoDbSettings:ConnectionString", connectionString},
-            {"MongoDbSettings:DatabaseName", databaseName}
-        };
-
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(myConfiguration)
-            .Build();
-
-        var mongoService = new MongoService(configuration, NullLogger<MongoService>.Instance);
-        var tokenService = new MongoDbTokenService(mongoService);
+        await using var fixture = new MongoIntegrationFixture();
         var tokenId = new TokenIdentifier("test-user-consume");
-        var logId = "test-log-id-consume";
 
-        try
+        var token = await fixture.TokenService.Generate("test-log-id-consume", tokenId, 300, 6);
+        Assert.NotNull(token);
+
+        Assert.True(await fixture.TokenService.ConsumeAndValidate(tokenId, token), "ConsumeAndValidate should return true for valid token");
+        Assert.False(await fixture.TokenService.Validate(tokenId, token), "Token should be invalid after being consumed");
+    }
+
+    [Fact]
+    public async Task ConsumeAndValidate_DeletesTheTokenEvenWhenTheGuessIsWrong()
+    {
+        // Documented behaviour, and the reason callers who do not want a wrong guess to
+        // discard a pending token should use Validate followed by Consume instead.
+        await using var fixture = new MongoIntegrationFixture();
+        var tokenId = new TokenIdentifier("test-user-wrong-guess");
+
+        var token = await fixture.TokenService.Generate("test-log-id-wrong-guess", tokenId, 300, 6);
+
+        Assert.False(await fixture.TokenService.ConsumeAndValidate(tokenId, "000000" == token ? "111111" : "000000"));
+        Assert.False(await fixture.TokenService.Validate(tokenId, token), "the correct token is gone after a wrong guess");
+    }
+
+    [Fact]
+    public async Task Consume_RemovesTheToken()
+    {
+        await using var fixture = new MongoIntegrationFixture();
+        var tokenId = new TokenIdentifier("test-user-consume-only");
+
+        var token = await fixture.TokenService.Generate("test-log-id-consume-only", tokenId, 300, 6);
+        Assert.True(await fixture.TokenService.Validate(tokenId, token));
+
+        await fixture.TokenService.Consume(tokenId);
+
+        Assert.False(await fixture.TokenService.Validate(tokenId, token));
+    }
+
+    [Fact]
+    public async Task Generate_ReplacesAnyPreviousToken()
+    {
+        await using var fixture = new MongoIntegrationFixture();
+        var tokenId = new TokenIdentifier("test-user-regenerate");
+
+        var first = await fixture.TokenService.Generate("test-log-id-regenerate", tokenId, 300, 6);
+        var second = await fixture.TokenService.Generate("test-log-id-regenerate", tokenId, 300, 6);
+
+        Assert.False(await fixture.TokenService.Validate(tokenId, first), "the superseded token should no longer validate");
+        Assert.True(await fixture.TokenService.Validate(tokenId, second));
+    }
+
+    [Fact]
+    public async Task Generate_RejectsInvalidArguments()
+    {
+        await using var fixture = new MongoIntegrationFixture();
+        var tokenId = new TokenIdentifier("test-user-args");
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => fixture.TokenService.Generate("log", tokenId, 300, -1));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => fixture.TokenService.Generate("log", tokenId, 0, 6));
+    }
+
+    [Fact]
+    public async Task PepperedTokens_ValidateOnlyWithTheSamePepper()
+    {
+        await using var fixture = new MongoIntegrationFixture(hashPepper: "server-secret");
+        var tokenId = new TokenIdentifier("test-user-pepper");
+
+        var token = await fixture.TokenService.Generate("test-log-id-pepper", tokenId, 300, 6);
+
+        Assert.True(await fixture.TokenService.Validate(tokenId, token));
+    }
+
+    [Fact]
+    public async Task CleanupAfterExpiry_CanBeChangedOnAnExistingCollection()
+    {
+        // MongoDB raises IndexOptionsConflict when an index is recreated with different
+        // options, so a second service with a different TTL used to throw on every call.
+        await using var fixture = new MongoIntegrationFixture(cleanupAfterExpiry: TimeSpan.FromHours(24));
+        var tokenId = new TokenIdentifier("test-user-ttl");
+
+        await fixture.TokenService.Generate("test-log-id-ttl", tokenId, 300, 6);
+
+        var withDifferentTtl = new MongoIntegrationFixture(cleanupAfterExpiry: TimeSpan.FromHours(1));
+        await using (withDifferentTtl)
         {
-            // Act
-            var token = await tokenService.Generate(logId, tokenId, 300, 6);
-
-            // Assert
-            Assert.NotNull(token);
-
-            // Consume and Validate
-            var isConsumed = await tokenService.ConsumeAndValidate(tokenId, token);
-            Assert.True(isConsumed, "ConsumeAndValidate should return true for valid token");
-
-            // Verify it's gone
-            var isValidAfterConsume = await tokenService.Validate(tokenId, token);
-            Assert.False(isValidAfterConsume, "Token should be invalid after being consumed");
-        }
-        finally
-        {
-            // Cleanup
-            await mongoService.Database.Client.DropDatabaseAsync(databaseName, TestContext.Current.CancellationToken);
+            var token = await withDifferentTtl.TokenService.Generate("test-log-id-ttl-2", tokenId, 300, 6);
+            Assert.True(await withDifferentTtl.TokenService.Validate(tokenId, token));
         }
     }
 }

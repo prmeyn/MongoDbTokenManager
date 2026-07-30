@@ -1,4 +1,5 @@
-﻿using MongoDB.Driver;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using MongoDbService;
 using MongoDbTokenManager.Database.DTOs;
 
@@ -6,73 +7,176 @@ namespace MongoDbTokenManager.Database
 {
 	public sealed class MongoDbTokenService : AbstractTokenService
     {
-        private IMongoCollection<Tokens> _tokenCollection;
+        private const int IndexOptionsConflictErrorCode = 85;
+        private const string TtlIndexName = "ExpiresAt_ttl";
+
+        private readonly IMongoCollection<Tokens> _tokenCollection;
+        private readonly string? _hashPepper;
+        private readonly TimeSpan _ttlExpiry;
+        private readonly SemaphoreSlim _ttlIndexGate = new(1, 1);
+        private volatile bool _ttlIndexReady;
 
 		public MongoDbTokenService(
 			MongoService mongoService,
-			TimeSpan? cleanupAfterExpiry = null)
+			TimeSpan? cleanupAfterExpiry = null,
+			string? hashPepper = null)
         {
+            _hashPepper = hashPepper;
+            _ttlExpiry = cleanupAfterExpiry ?? TimeSpan.FromHours(24);
             _tokenCollection = mongoService.Database.GetCollection<Tokens>(nameof(Tokens), new MongoCollectionSettings() { ReadConcern = ReadConcern.Majority, WriteConcern = WriteConcern.WMajority });
-
-            var ttlExpiry = cleanupAfterExpiry ?? TimeSpan.FromHours(24);
-            var indexKeysDefinition = Builders<Tokens>.IndexKeys.Ascending(t => t.ExpiresAt);
-            var indexModel = new CreateIndexModel<Tokens>(
-                indexKeysDefinition,
-                new CreateIndexOptions { ExpireAfter = ttlExpiry }
-            );
-            _tokenCollection.Indexes.CreateOne(indexModel);
         }
 
-        private FilterDefinition<Tokens> Filter(TokenIdentifier id) => Builders<Tokens>.Filter.Eq(t => t.Id, id.ToString());
+        /// <summary>
+        /// Creates the TTL index on first use. Deferred out of the constructor so that
+        /// building the DI container does not block on a network round trip, and so an
+        /// unreachable database surfaces on the call that needs it rather than at startup.
+        /// A failed attempt is not cached, so a transient outage does not disable the service.
+        /// </summary>
+        private async Task EnsureTtlIndex()
+        {
+            if (_ttlIndexReady)
+            {
+                return;
+            }
+
+            await _ttlIndexGate.WaitAsync();
+            try
+            {
+                if (_ttlIndexReady)
+                {
+                    return;
+                }
+
+                var indexModel = new CreateIndexModel<Tokens>(
+                    Builders<Tokens>.IndexKeys.Ascending(t => t.ExpiresAt),
+                    new CreateIndexOptions { Name = TtlIndexName, ExpireAfter = _ttlExpiry }
+                );
+
+                try
+                {
+                    await _tokenCollection.Indexes.CreateOneAsync(indexModel);
+                }
+                catch (MongoCommandException e) when (e.Code == IndexOptionsConflictErrorCode)
+                {
+                    // The index exists with a different expireAfterSeconds. MongoDB refuses to
+                    // recreate it, so amend it in place instead. Without this, passing a
+                    // cleanupAfterExpiry that differs from the one the collection was created
+                    // with - which README documents doing - would throw on every call.
+                    await _tokenCollection.Database.RunCommandAsync<BsonDocument>(new BsonDocument
+                    {
+                        { "collMod", _tokenCollection.CollectionNamespace.CollectionName },
+                        { "index", new BsonDocument
+                            {
+                                { "name", TtlIndexName },
+                                { "expireAfterSeconds", _ttlExpiry.TotalSeconds }
+                            }
+                        }
+                    });
+                }
+
+                _ttlIndexReady = true;
+            }
+            finally
+            {
+                _ttlIndexGate.Release();
+            }
+        }
+
+        private static FilterDefinition<Tokens> FilterById(string idAsString) => Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);
+
+        /// <summary>
+        /// A struct can always be default-initialised, so the validating constructor is not a
+        /// guarantee. Rejecting it here stops an uninitialised identifier from reading or
+        /// writing a document keyed on the empty string, which every default instance shares.
+        /// </summary>
+        private static string RequireIdentifier(TokenIdentifier id)
+        {
+            if (id.IsEmpty)
+            {
+                throw new ArgumentException("The token identifier is uninitialised. Construct it with a value instead of using default(TokenIdentifier).", nameof(id));
+            }
+
+            return id.ToString();
+        }
 
         public override async Task Consume(TokenIdentifier id)
         {
-            await _tokenCollection.DeleteOneAsync(Filter(id));
+            var idAsString = RequireIdentifier(id);
+            await EnsureTtlIndex();
+            await _tokenCollection.DeleteOneAsync(FilterById(idAsString));
         }
 
         public override async Task<bool> ConsumeAndValidate(TokenIdentifier id, string token)
         {
-            var isValid = await Validate(id, token);
-            await Consume(id);
-            return await Task.FromResult(isValid);
-        }
+            var idAsString = RequireIdentifier(id);
 
-        public override async Task<string> Generate(string logId, TokenIdentifier id, int validityInSeconds, int numberOfDigits = 0)
-        {
-            string oneTimeToken;
-            var tokenInDb = await _tokenCollection.Find(Filter(id)).FirstOrDefaultAsync();
-            if (tokenInDb is not null)
-            {
-                await Consume(id);
-            }
-            oneTimeToken = (numberOfDigits > 0) ? Utils.GetRandomNumber(numberOfDigits) : Guid.NewGuid().ToString().ToLowerInvariant();
-
-            var idAsString = id.ToString();
-            var filter = Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);
-            var options = new ReplaceOptions { IsUpsert = true };
-            var tokenValue = new TokenValue(salt: idAsString, oneTimeToken);
-            var expiresAt = DateTime.UtcNow.AddSeconds(validityInSeconds);
-            await _tokenCollection.ReplaceOneAsync(filter, new Tokens() { LogId = logId, Id = idAsString, Token = tokenValue, ExpiresAt = expiresAt }, options);
-            return await Task.FromResult(oneTimeToken);
-        }
-
-        public override async Task<bool> Validate(TokenIdentifier id, string token)
-        {
             if (string.IsNullOrWhiteSpace(token))
             {
                 return false;
             }
-			var idAsString = id.ToString();
-			var filter = Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);
 
-			var tokenInDb = await _tokenCollection.Find(filter).FirstOrDefaultAsync();
+            await EnsureTtlIndex();
 
-			if (tokenInDb == null) // Null check added
+            var tokenInDb = await _tokenCollection.Find(FilterById(idAsString)).FirstOrDefaultAsync();
+
+            if (tokenInDb is null || !tokenInDb.Token.Valid(salt: idAsString, token, tokenInDb.ExpiresAt, _hashPepper))
+            {
+                // The stored token stays put. A wrong guess must not discard a token the
+                // legitimate holder has not had a chance to use.
+                return false;
+            }
+
+            // Claim it atomically, matching the hash just verified. If a concurrent caller got
+            // there first the delete matches nothing and this call reports failure, so a token
+            // can still only ever be consumed once. Matching on the hash also leaves a token
+            // issued by a Generate that raced in between untouched.
+            var claimed = await _tokenCollection.FindOneAndDeleteAsync(Builders<Tokens>.Filter.And(
+                Builders<Tokens>.Filter.Eq(t => t.Id, idAsString),
+                Builders<Tokens>.Filter.Eq(t => t.Token.OneTimeTokenHash, tokenInDb.Token.OneTimeTokenHash)));
+
+            return claimed is not null;
+        }
+
+        public override async Task<string> Generate(string logId, TokenIdentifier id, int validityInSeconds, int numberOfDigits = 0)
+        {
+            var idAsString = RequireIdentifier(id);
+            ArgumentOutOfRangeException.ThrowIfNegative(numberOfDigits);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(validityInSeconds);
+
+            await EnsureTtlIndex();
+
+            // No need to look for and delete an existing token first: the upsert below
+            // replaces it in a single round trip, and deleting it beforehand left a window
+            // in which a concurrent Validate saw no token at all.
+            var oneTimeToken = (numberOfDigits > 0) ? Utils.GetRandomNumber(numberOfDigits) : Guid.NewGuid().ToString().ToLowerInvariant();
+
+            var filter = FilterById(idAsString);
+            var options = new ReplaceOptions { IsUpsert = true };
+            var tokenValue = new TokenValue(salt: idAsString, oneTimeToken, _hashPepper);
+            var expiresAt = DateTime.UtcNow.AddSeconds(validityInSeconds);
+            await _tokenCollection.ReplaceOneAsync(filter, new Tokens() { LogId = logId, Id = idAsString, Token = tokenValue, ExpiresAt = expiresAt }, options);
+            return oneTimeToken;
+        }
+
+        public override async Task<bool> Validate(TokenIdentifier id, string token)
+        {
+            var idAsString = RequireIdentifier(id);
+
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            await EnsureTtlIndex();
+
+			var tokenInDb = await _tokenCollection.Find(FilterById(idAsString)).FirstOrDefaultAsync();
+
+			if (tokenInDb is null)
 			{
 				return false;
 			}
 
-			return await Task.FromResult(tokenInDb?.Token?.Valid(salt: idAsString, token, tokenInDb.ExpiresAt) ?? false);
+			return tokenInDb.Token.Valid(salt: idAsString, token, tokenInDb.ExpiresAt, _hashPepper);
         }
     }
 }

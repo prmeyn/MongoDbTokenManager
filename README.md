@@ -125,7 +125,9 @@ Checks if a token is valid.
 Deletes the token associated with the identifier, preventing further use.
 
 ### `ConsumeAndValidate`
-Validates the token and immediately consumes it (deletes it) regardless of the result. Useful for strict one-time-use scenarios.
+Validates the token and consumes it (deletes it) **only if it matched**. A wrong or expired guess leaves the stored token in place, so an incorrect attempt cannot lock the legitimate holder out. The delete is a conditional atomic operation, so of two concurrent callers submitting the same correct token exactly one receives `true`.
+
+- **Note**: since a wrong guess no longer discards the token, repeated attempts are possible. This package does not rate limit — see the note under `Validate`.
 
 ## Configuration Options
 
@@ -143,6 +145,24 @@ builder.Services.AddSingleton(sp =>
 ```
 
 Set to `TimeSpan.Zero` to delete tokens immediately upon expiry.
+
+The TTL index is created on first use rather than at construction, so building your DI container does not require MongoDB to be reachable. Changing `cleanupAfterExpiry` for a collection that already has the index is applied in place.
+
+### Hardening the Stored Hash
+
+By default a token is stored as a SHA-512 digest of the identifier and the token. The identifier acts as the salt, so it is deterministic and known — meaning that if the collection itself leaks, a short numeric token can be recovered by trying all 10ⁿ candidates offline.
+
+Pass a `hashPepper` to key the digest with a secret that lives outside the database (HMAC-SHA512), which makes that offline search infeasible:
+
+```csharp
+builder.Services.AddSingleton(sp =>
+    new MongoDbTokenService(
+        sp.GetRequiredService<MongoService>(),
+        hashPepper: builder.Configuration["TokenHashPepper"]
+    ));
+```
+
+Keep the pepper in a secret store, not in `appsettings.json`. Note that **tokens issued before you add a pepper — or with a different one — will stop validating**, so roll it out when no tokens are in flight, or accept that outstanding tokens must be reissued.
 
 ## Contributing
 

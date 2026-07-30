@@ -1,13 +1,20 @@
-﻿namespace MongoDbTokenManager
+namespace MongoDbTokenManager
 {
-    public struct TokenIdentifier
+    public readonly struct TokenIdentifier : IEquatable<TokenIdentifier>
     {
-        private string value;
+        private readonly string value;
+
+        /// <summary>
+        /// True for <c>default(TokenIdentifier)</c>, which bypasses the validating constructor
+        /// because a struct can always be default-initialised.
+        /// </summary>
+        public bool IsEmpty => string.IsNullOrEmpty(value);
 
         public TokenIdentifier(string value)
         {
+            ArgumentNullException.ThrowIfNull(value);
             this.value = value.ToLowerInvariant().Trim();
-            if (string.IsNullOrWhiteSpace(this.value)) { throw new Exception($"Invalid ID>>{value}<<"); }
+            if (string.IsNullOrWhiteSpace(this.value)) { throw new ArgumentException("The token identifier must not be blank.", nameof(value)); }
         }
 
         public override bool Equals(object? obj)
@@ -22,12 +29,12 @@
 
         public bool Equals(TokenIdentifier other)
         {
-            return this.value.Equals(other.value, StringComparison.InvariantCulture);
+            return string.Equals(this.value, other.value, StringComparison.Ordinal);
         }
 
         public override string ToString()
         {
-            return this.value;
+            return this.value ?? string.Empty;
         }
 
         public static implicit operator TokenIdentifier(string value)
@@ -37,13 +44,13 @@
 
         public static explicit operator string(TokenIdentifier tokenIdentifier)
         {
-            return tokenIdentifier.value;
+            return tokenIdentifier.ToString();
         }
 
 
         public static bool operator ==(TokenIdentifier left, TokenIdentifier right)
         {
-            return left.value == right.value;
+            return left.Equals(right);
         }
 
         public static bool operator !=(TokenIdentifier left, TokenIdentifier right)
@@ -53,7 +60,7 @@
 
         public override int GetHashCode()
         {
-            throw new NotImplementedException();
+            return StringComparer.Ordinal.GetHashCode(this.ToString());
         }
     }
 }

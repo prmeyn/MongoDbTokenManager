@@ -13,14 +13,4 @@ namespace MongoDbTokenManager
 			services.AddSingleton<AbstractTokenService>(sp => sp.GetRequiredService<MongoDbTokenService>());
 		}
 	}
-
-	/// <summary>
-	/// Misspelled original, kept so callers that referenced the class by name still compile.
-	/// Renaming it outright would be a breaking change.
-	/// </summary>
-	[Obsolete("Use ServiceCollectionExtensions instead. This misspelled alias will be removed in the next major version.")]
-	public static class SeviceCollectionExtensions
-	{
-		public static void AddMongoDbTokenServices(this IServiceCollection services) => ServiceCollectionExtensions.AddMongoDbTokenServices(services);
-	}
 }

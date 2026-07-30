@@ -1,4 +1,4 @@
-﻿using Common.Utilities;
+﻿using Meyn.Utilities;
 
 namespace MongoDbTokenManager
 {

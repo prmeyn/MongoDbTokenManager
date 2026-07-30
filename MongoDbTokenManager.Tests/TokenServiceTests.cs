@@ -18,7 +18,7 @@ public class TokenServiceTests
         var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
         var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
         
-        var myConfiguration = new Dictionary<string, string>
+        var myConfiguration = new Dictionary<string, string?>
         {
             {"MongoDbSettings:ConnectionString", connectionString},
             {"MongoDbSettings:DatabaseName", databaseName}
@@ -62,7 +62,7 @@ public class TokenServiceTests
         finally
         {
             // Cleanup
-            await mongoService.Database.Client.DropDatabaseAsync(databaseName);
+            await mongoService.Database.Client.DropDatabaseAsync(databaseName, TestContext.Current.CancellationToken);
         }
     }
 
@@ -75,7 +75,7 @@ public class TokenServiceTests
         var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
         var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
         
-        var myConfiguration = new Dictionary<string, string>
+        var myConfiguration = new Dictionary<string, string?>
         {
             {"MongoDbSettings:ConnectionString", connectionString},
             {"MongoDbSettings:DatabaseName", databaseName}
@@ -99,7 +99,7 @@ public class TokenServiceTests
             Assert.NotNull(token);
             
             // Wait for expiration
-            await Task.Delay(2000);
+            await Task.Delay(2000, TestContext.Current.CancellationToken);
 
             var isValid = await tokenService.Validate(tokenId, token);
             Assert.False(isValid, "Token should be invalid after expiration period");
@@ -107,7 +107,7 @@ public class TokenServiceTests
         finally
         {
             // Cleanup
-            await mongoService.Database.Client.DropDatabaseAsync(databaseName);
+            await mongoService.Database.Client.DropDatabaseAsync(databaseName, TestContext.Current.CancellationToken);
         }
     }
 
@@ -120,7 +120,7 @@ public class TokenServiceTests
         var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
         var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
         
-        var myConfiguration = new Dictionary<string, string>
+        var myConfiguration = new Dictionary<string, string?>
         {
             {"MongoDbSettings:ConnectionString", connectionString},
             {"MongoDbSettings:DatabaseName", databaseName}
@@ -161,7 +161,7 @@ public class TokenServiceTests
         finally
         {
             // Cleanup
-            await mongoService.Database.Client.DropDatabaseAsync(databaseName);
+            await mongoService.Database.Client.DropDatabaseAsync(databaseName, TestContext.Current.CancellationToken);
         }
     }
 
@@ -172,7 +172,7 @@ public class TokenServiceTests
         var connectionString = Environment.GetEnvironmentVariable("MONGODB_CONNECTION_STRING") ?? "mongodb://localhost:27017";
         var databaseName = "TokenManagerTestDb_" + Guid.NewGuid();
         
-        var myConfiguration = new Dictionary<string, string>
+        var myConfiguration = new Dictionary<string, string?>
         {
             {"MongoDbSettings:ConnectionString", connectionString},
             {"MongoDbSettings:DatabaseName", databaseName}
@@ -206,7 +206,7 @@ public class TokenServiceTests
         finally
         {
             // Cleanup
-            await mongoService.Database.Client.DropDatabaseAsync(databaseName);
+            await mongoService.Database.Client.DropDatabaseAsync(databaseName, TestContext.Current.CancellationToken);
         }
     }
 }

@@ -1,3 +1,5 @@
+using MongoDB.Driver;
+using MongoDbTokenManager.Database.DTOs;
 using Xunit;
 
 namespace MongoDbTokenManager.Tests;
@@ -156,6 +158,37 @@ public class TokenServiceTests
         var token = await fixture.TokenService.Generate("test-log-id-pepper", tokenId, 300, 6);
 
         Assert.True(await fixture.TokenService.Validate(tokenId, token));
+    }
+
+    [Theory]
+    [InlineData("ExpiresAt_1")]   // the name every release up to 10.1.0 produced
+    [InlineData("ExpiresAt_ttl")] // the name 10.2.0 produced
+    public async Task UpgradesOverAnExistingTtlIndexWhateverItIsCalled(string legacyIndexName)
+    {
+        // 10.2.0 asked for the ExpiresAt index under a new name and then ran collMod against
+        // that assumed name, so upgrading a database created by an earlier release threw on
+        // every call. Plant the legacy index with a different TTL and check the service copes.
+        await using var fixture = new MongoIntegrationFixture(cleanupAfterExpiry: TimeSpan.FromHours(1));
+        var collection = fixture.Database.GetCollection<Tokens>(nameof(Tokens));
+
+        await collection.Indexes.CreateOneAsync(new CreateIndexModel<Tokens>(
+            Builders<Tokens>.IndexKeys.Ascending(t => t.ExpiresAt),
+            new CreateIndexOptions { Name = legacyIndexName, ExpireAfter = TimeSpan.FromHours(72) }),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var tokenId = new TokenIdentifier("test-user-legacy-index");
+        var token = await fixture.TokenService.Generate("test-log-id-legacy-index", tokenId, 300, 6);
+
+        Assert.True(await fixture.TokenService.Validate(tokenId, token));
+
+        // The existing index was amended in place, not duplicated.
+        using var cursor = await collection.Indexes.ListAsync(TestContext.Current.CancellationToken);
+        var indexes = await cursor.ToListAsync(TestContext.Current.CancellationToken);
+        var onExpiresAt = indexes.Where(i => i["key"].AsBsonDocument.Contains(nameof(Tokens.ExpiresAt))).ToList();
+
+        Assert.Single(onExpiresAt);
+        Assert.Equal(legacyIndexName, onExpiresAt[0]["name"].AsString);
+        Assert.Equal(3600, onExpiresAt[0]["expireAfterSeconds"].ToDouble());
     }
 
     [Fact]

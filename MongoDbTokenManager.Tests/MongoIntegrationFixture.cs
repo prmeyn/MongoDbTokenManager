@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
+using MongoDB.Driver;
 using MongoDbService;
 using MongoDbTokenManager.Database;
 
@@ -17,6 +18,12 @@ internal sealed class MongoIntegrationFixture : IAsyncDisposable
     private readonly string _databaseName;
 
     public MongoDbTokenService TokenService { get; }
+
+    /// <summary>
+    /// The raw database, so tests can set up state the service would not create itself - such
+    /// as a TTL index left behind by an earlier release.
+    /// </summary>
+    public IMongoDatabase Database => _mongoService.Database;
 
     public MongoIntegrationFixture(TimeSpan? cleanupAfterExpiry = null, string? hashPepper = null)
     {

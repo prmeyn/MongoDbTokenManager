@@ -35,9 +35,18 @@ namespace MongoDbTokenManager.Database
 
         public override async Task<bool> ConsumeAndValidate(TokenIdentifier id, string token)
         {
-            var isValid = await Validate(id, token);
-            await Consume(id);
-            return isValid;
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            // Fetch and delete in one server round trip. Reading and then deleting let two
+            // concurrent callers both observe the same token as valid before either removed
+            // it, which is exactly what a one-time token must not allow.
+            var idAsString = id.ToString();
+            var tokenInDb = await _tokenCollection.FindOneAndDeleteAsync(Builders<Tokens>.Filter.Eq(t => t.Id, idAsString));
+
+            return tokenInDb?.Token.Valid(salt: idAsString, token, tokenInDb.ExpiresAt, _hashPepper) ?? false;
         }
 
         public override async Task<string> Generate(string logId, TokenIdentifier id, int validityInSeconds, int numberOfDigits = 0)

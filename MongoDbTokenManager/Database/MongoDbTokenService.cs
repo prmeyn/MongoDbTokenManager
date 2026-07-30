@@ -7,11 +7,14 @@ namespace MongoDbTokenManager.Database
 	public sealed class MongoDbTokenService : AbstractTokenService
     {
         private IMongoCollection<Tokens> _tokenCollection;
+        private readonly string? _hashPepper;
 
 		public MongoDbTokenService(
 			MongoService mongoService,
-			TimeSpan? cleanupAfterExpiry = null)
+			TimeSpan? cleanupAfterExpiry = null,
+			string? hashPepper = null)
         {
+            _hashPepper = hashPepper;
             _tokenCollection = mongoService.Database.GetCollection<Tokens>(nameof(Tokens), new MongoCollectionSettings() { ReadConcern = ReadConcern.Majority, WriteConcern = WriteConcern.WMajority });
 
             var ttlExpiry = cleanupAfterExpiry ?? TimeSpan.FromHours(24);
@@ -50,7 +53,7 @@ namespace MongoDbTokenManager.Database
             var idAsString = id.ToString();
             var filter = Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);
             var options = new ReplaceOptions { IsUpsert = true };
-            var tokenValue = new TokenValue(salt: idAsString, oneTimeToken);
+            var tokenValue = new TokenValue(salt: idAsString, oneTimeToken, _hashPepper);
             var expiresAt = DateTime.UtcNow.AddSeconds(validityInSeconds);
             await _tokenCollection.ReplaceOneAsync(filter, new Tokens() { LogId = logId, Id = idAsString, Token = tokenValue, ExpiresAt = expiresAt }, options);
             return await Task.FromResult(oneTimeToken);
@@ -72,7 +75,7 @@ namespace MongoDbTokenManager.Database
 				return false;
 			}
 
-			return await Task.FromResult(tokenInDb?.Token?.Valid(salt: idAsString, token, tokenInDb.ExpiresAt) ?? false);
+			return await Task.FromResult(tokenInDb?.Token?.Valid(salt: idAsString, token, tokenInDb.ExpiresAt, _hashPepper) ?? false);
         }
     }
 }

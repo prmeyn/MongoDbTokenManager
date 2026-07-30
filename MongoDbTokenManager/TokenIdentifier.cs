@@ -1,8 +1,8 @@
-﻿namespace MongoDbTokenManager
+namespace MongoDbTokenManager
 {
-    public struct TokenIdentifier
+    public struct TokenIdentifier : IEquatable<TokenIdentifier>
     {
-        private string value;
+        private readonly string value;
 
         public TokenIdentifier(string value)
         {
@@ -22,12 +22,12 @@
 
         public bool Equals(TokenIdentifier other)
         {
-            return this.value.Equals(other.value, StringComparison.InvariantCulture);
+            return string.Equals(this.value, other.value, StringComparison.Ordinal);
         }
 
         public override string ToString()
         {
-            return this.value;
+            return this.value ?? string.Empty;
         }
 
         public static implicit operator TokenIdentifier(string value)
@@ -37,13 +37,13 @@
 
         public static explicit operator string(TokenIdentifier tokenIdentifier)
         {
-            return tokenIdentifier.value;
+            return tokenIdentifier.ToString();
         }
 
 
         public static bool operator ==(TokenIdentifier left, TokenIdentifier right)
         {
-            return left.value == right.value;
+            return left.Equals(right);
         }
 
         public static bool operator !=(TokenIdentifier left, TokenIdentifier right)
@@ -53,7 +53,7 @@
 
         public override int GetHashCode()
         {
-            throw new NotImplementedException();
+            return StringComparer.Ordinal.GetHashCode(this.ToString());
         }
     }
 }

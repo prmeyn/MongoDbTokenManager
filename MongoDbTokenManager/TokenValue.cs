@@ -1,4 +1,6 @@
 ﻿using Meyn.Utilities;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace MongoDbTokenManager
 {
@@ -13,9 +15,12 @@ namespace MongoDbTokenManager
 
         public bool Valid(string salt, string oneTimeToken, DateTime expiresAt)
         {
-            return OneTimeTokenHash == ComputeOneTimeToken(salt, oneTimeToken) && DateTime.UtcNow <= expiresAt;
+            return HashesMatch(OneTimeTokenHash, ComputeOneTimeToken(salt, oneTimeToken)) && DateTime.UtcNow <= expiresAt;
         }
 
         private string ComputeOneTimeToken(string salt, string oneTimeToken) => CryptoUtils.ComputeSha512Hash($"{salt.ToLowerInvariant()}####{oneTimeToken.ToLowerInvariant()}");
+
+        private static bool HashesMatch(string stored, string candidate) =>
+            CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(stored), Encoding.UTF8.GetBytes(candidate));
 	}
 }

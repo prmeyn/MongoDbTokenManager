@@ -6,7 +6,7 @@ namespace MongoDbTokenManager.Database
 {
 	public sealed class MongoDbTokenService : AbstractTokenService
     {
-        private IMongoCollection<Tokens> _tokenCollection;
+        private readonly IMongoCollection<Tokens> _tokenCollection;
         private readonly string? _hashPepper;
 
 		public MongoDbTokenService(
@@ -37,7 +37,7 @@ namespace MongoDbTokenManager.Database
         {
             var isValid = await Validate(id, token);
             await Consume(id);
-            return await Task.FromResult(isValid);
+            return isValid;
         }
 
         public override async Task<string> Generate(string logId, TokenIdentifier id, int validityInSeconds, int numberOfDigits = 0)
@@ -56,7 +56,7 @@ namespace MongoDbTokenManager.Database
             var tokenValue = new TokenValue(salt: idAsString, oneTimeToken, _hashPepper);
             var expiresAt = DateTime.UtcNow.AddSeconds(validityInSeconds);
             await _tokenCollection.ReplaceOneAsync(filter, new Tokens() { LogId = logId, Id = idAsString, Token = tokenValue, ExpiresAt = expiresAt }, options);
-            return await Task.FromResult(oneTimeToken);
+            return oneTimeToken;
         }
 
         public override async Task<bool> Validate(TokenIdentifier id, string token)
@@ -70,12 +70,12 @@ namespace MongoDbTokenManager.Database
 
 			var tokenInDb = await _tokenCollection.Find(filter).FirstOrDefaultAsync();
 
-			if (tokenInDb == null) // Null check added
+			if (tokenInDb is null)
 			{
 				return false;
 			}
 
-			return await Task.FromResult(tokenInDb?.Token?.Valid(salt: idAsString, token, tokenInDb.ExpiresAt, _hashPepper) ?? false);
+			return tokenInDb.Token.Valid(salt: idAsString, token, tokenInDb.ExpiresAt, _hashPepper);
         }
     }
 }

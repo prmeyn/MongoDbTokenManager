@@ -42,6 +42,9 @@ namespace MongoDbTokenManager.Database
 
         public override async Task<string> Generate(string logId, TokenIdentifier id, int validityInSeconds, int numberOfDigits = 0)
         {
+            ArgumentOutOfRangeException.ThrowIfNegative(numberOfDigits);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(validityInSeconds);
+
             // No need to look for and delete an existing token first: the upsert below
             // replaces it in a single round trip, and deleting it beforehand left a window
             // in which a concurrent Validate saw no token at all.

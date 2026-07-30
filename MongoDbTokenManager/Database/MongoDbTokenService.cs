@@ -82,16 +82,34 @@ namespace MongoDbTokenManager.Database
             }
         }
 
-        private FilterDefinition<Tokens> Filter(TokenIdentifier id) => Builders<Tokens>.Filter.Eq(t => t.Id, id.ToString());
+        private static FilterDefinition<Tokens> FilterById(string idAsString) => Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);
+
+        /// <summary>
+        /// A struct can always be default-initialised, so the validating constructor is not a
+        /// guarantee. Rejecting it here stops an uninitialised identifier from reading or
+        /// writing a document keyed on the empty string, which every default instance shares.
+        /// </summary>
+        private static string RequireIdentifier(TokenIdentifier id)
+        {
+            if (id.IsEmpty)
+            {
+                throw new ArgumentException("The token identifier is uninitialised. Construct it with a value instead of using default(TokenIdentifier).", nameof(id));
+            }
+
+            return id.ToString();
+        }
 
         public override async Task Consume(TokenIdentifier id)
         {
+            var idAsString = RequireIdentifier(id);
             await EnsureTtlIndex();
-            await _tokenCollection.DeleteOneAsync(Filter(id));
+            await _tokenCollection.DeleteOneAsync(FilterById(idAsString));
         }
 
         public override async Task<bool> ConsumeAndValidate(TokenIdentifier id, string token)
         {
+            var idAsString = RequireIdentifier(id);
+
             if (string.IsNullOrWhiteSpace(token))
             {
                 return false;
@@ -99,8 +117,7 @@ namespace MongoDbTokenManager.Database
 
             await EnsureTtlIndex();
 
-            var idAsString = id.ToString();
-            var tokenInDb = await _tokenCollection.Find(Filter(id)).FirstOrDefaultAsync();
+            var tokenInDb = await _tokenCollection.Find(FilterById(idAsString)).FirstOrDefaultAsync();
 
             if (tokenInDb is null || !tokenInDb.Token.Valid(salt: idAsString, token, tokenInDb.ExpiresAt, _hashPepper))
             {
@@ -122,6 +139,7 @@ namespace MongoDbTokenManager.Database
 
         public override async Task<string> Generate(string logId, TokenIdentifier id, int validityInSeconds, int numberOfDigits = 0)
         {
+            var idAsString = RequireIdentifier(id);
             ArgumentOutOfRangeException.ThrowIfNegative(numberOfDigits);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(validityInSeconds);
 
@@ -132,8 +150,7 @@ namespace MongoDbTokenManager.Database
             // in which a concurrent Validate saw no token at all.
             var oneTimeToken = (numberOfDigits > 0) ? Utils.GetRandomNumber(numberOfDigits) : Guid.NewGuid().ToString().ToLowerInvariant();
 
-            var idAsString = id.ToString();
-            var filter = Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);
+            var filter = FilterById(idAsString);
             var options = new ReplaceOptions { IsUpsert = true };
             var tokenValue = new TokenValue(salt: idAsString, oneTimeToken, _hashPepper);
             var expiresAt = DateTime.UtcNow.AddSeconds(validityInSeconds);
@@ -143,6 +160,8 @@ namespace MongoDbTokenManager.Database
 
         public override async Task<bool> Validate(TokenIdentifier id, string token)
         {
+            var idAsString = RequireIdentifier(id);
+
             if (string.IsNullOrWhiteSpace(token))
             {
                 return false;
@@ -150,10 +169,7 @@ namespace MongoDbTokenManager.Database
 
             await EnsureTtlIndex();
 
-			var idAsString = id.ToString();
-			var filter = Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);
-
-			var tokenInDb = await _tokenCollection.Find(filter).FirstOrDefaultAsync();
+			var tokenInDb = await _tokenCollection.Find(FilterById(idAsString)).FirstOrDefaultAsync();
 
 			if (tokenInDb is null)
 			{

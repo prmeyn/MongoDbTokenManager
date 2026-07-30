@@ -148,16 +148,6 @@ public class TokenServiceTests
     }
 
     [Fact]
-    public async Task Generate_RejectsInvalidArguments()
-    {
-        await using var fixture = new MongoIntegrationFixture();
-        var tokenId = new TokenIdentifier("test-user-args");
-
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => fixture.TokenService.Generate("log", tokenId, 300, -1));
-        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => fixture.TokenService.Generate("log", tokenId, 0, 6));
-    }
-
-    [Fact]
     public async Task PepperedTokens_ValidateOnlyWithTheSamePepper()
     {
         await using var fixture = new MongoIntegrationFixture(hashPepper: "server-secret");

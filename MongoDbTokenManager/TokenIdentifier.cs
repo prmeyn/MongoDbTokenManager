@@ -1,8 +1,14 @@
 namespace MongoDbTokenManager
 {
-    public struct TokenIdentifier : IEquatable<TokenIdentifier>
+    public readonly struct TokenIdentifier : IEquatable<TokenIdentifier>
     {
         private readonly string value;
+
+        /// <summary>
+        /// True for <c>default(TokenIdentifier)</c>, which bypasses the validating constructor
+        /// because a struct can always be default-initialised.
+        /// </summary>
+        public bool IsEmpty => string.IsNullOrEmpty(value);
 
         public TokenIdentifier(string value)
         {

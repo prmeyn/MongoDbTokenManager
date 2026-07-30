@@ -125,7 +125,9 @@ Checks if a token is valid.
 Deletes the token associated with the identifier, preventing further use.
 
 ### `ConsumeAndValidate`
-Validates the token and immediately consumes it (deletes it) regardless of the result. Useful for strict one-time-use scenarios.
+Validates the token and immediately consumes it (deletes it) regardless of the result. The fetch and delete happen in a single atomic operation, so concurrent callers cannot both consume the same token. Useful for strict one-time-use scenarios.
+
+- **Note**: because the token is deleted even when the submitted value is wrong, anyone who knows an identifier can discard that identifier's pending token by submitting a single incorrect guess. If you would rather a wrong guess left the token usable, call `Validate` and then `Consume` only on success.
 
 ## Configuration Options
 
@@ -143,6 +145,24 @@ builder.Services.AddSingleton(sp =>
 ```
 
 Set to `TimeSpan.Zero` to delete tokens immediately upon expiry.
+
+The TTL index is created on first use rather than at construction, so building your DI container does not require MongoDB to be reachable. Changing `cleanupAfterExpiry` for a collection that already has the index is applied in place.
+
+### Hardening the Stored Hash
+
+By default a token is stored as a SHA-512 digest of the identifier and the token. The identifier acts as the salt, so it is deterministic and known — meaning that if the collection itself leaks, a short numeric token can be recovered by trying all 10ⁿ candidates offline.
+
+Pass a `hashPepper` to key the digest with a secret that lives outside the database (HMAC-SHA512), which makes that offline search infeasible:
+
+```csharp
+builder.Services.AddSingleton(sp =>
+    new MongoDbTokenService(
+        sp.GetRequiredService<MongoService>(),
+        hashPepper: builder.Configuration["TokenHashPepper"]
+    ));
+```
+
+Keep the pepper in a secret store, not in `appsettings.json`. Note that **tokens issued before you add a pepper — or with a different one — will stop validating**, so roll it out when no tokens are in flight, or accept that outstanding tokens must be reissued.
 
 ## Contributing
 

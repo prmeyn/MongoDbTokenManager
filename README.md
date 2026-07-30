@@ -125,9 +125,9 @@ Checks if a token is valid.
 Deletes the token associated with the identifier, preventing further use.
 
 ### `ConsumeAndValidate`
-Validates the token and immediately consumes it (deletes it) regardless of the result. The fetch and delete happen in a single atomic operation, so concurrent callers cannot both consume the same token. Useful for strict one-time-use scenarios.
+Validates the token and consumes it (deletes it) **only if it matched**. A wrong or expired guess leaves the stored token in place, so an incorrect attempt cannot lock the legitimate holder out. The delete is a conditional atomic operation, so of two concurrent callers submitting the same correct token exactly one receives `true`.
 
-- **Note**: because the token is deleted even when the submitted value is wrong, anyone who knows an identifier can discard that identifier's pending token by submitting a single incorrect guess. If you would rather a wrong guess left the token usable, call `Validate` and then `Consume` only on success.
+- **Note**: since a wrong guess no longer discards the token, repeated attempts are possible. This package does not rate limit — see the note under `Validate`.
 
 ## Configuration Options
 

@@ -81,17 +81,43 @@ public class TokenServiceTests
     }
 
     [Fact]
-    public async Task ConsumeAndValidate_DeletesTheTokenEvenWhenTheGuessIsWrong()
+    public async Task ConsumeAndValidate_KeepsTheTokenWhenTheGuessIsWrong()
     {
-        // Documented behaviour, and the reason callers who do not want a wrong guess to
-        // discard a pending token should use Validate followed by Consume instead.
         await using var fixture = new MongoIntegrationFixture();
         var tokenId = new TokenIdentifier("test-user-wrong-guess");
 
         var token = await fixture.TokenService.Generate("test-log-id-wrong-guess", tokenId, 300, 6);
 
         Assert.False(await fixture.TokenService.ConsumeAndValidate(tokenId, "000000" == token ? "111111" : "000000"));
-        Assert.False(await fixture.TokenService.Validate(tokenId, token), "the correct token is gone after a wrong guess");
+        Assert.True(await fixture.TokenService.Validate(tokenId, token), "a wrong guess must not discard the pending token");
+        Assert.True(await fixture.TokenService.ConsumeAndValidate(tokenId, token), "the correct token still works after a wrong guess");
+    }
+
+    [Fact]
+    public async Task ConsumeAndValidate_OnlyOneOfTwoConcurrentCallersSucceeds()
+    {
+        await using var fixture = new MongoIntegrationFixture();
+        var tokenId = new TokenIdentifier("test-user-concurrent");
+
+        var token = await fixture.TokenService.Generate("test-log-id-concurrent", tokenId, 300, 6);
+
+        var results = await Task.WhenAll(
+            fixture.TokenService.ConsumeAndValidate(tokenId, token),
+            fixture.TokenService.ConsumeAndValidate(tokenId, token));
+
+        Assert.Single(results, true);
+    }
+
+    [Fact]
+    public async Task ConsumeAndValidate_FalseForAnExpiredToken()
+    {
+        await using var fixture = new MongoIntegrationFixture();
+        var tokenId = new TokenIdentifier("test-user-expired-consume");
+
+        var token = await fixture.TokenService.Generate("test-log-id-expired-consume", tokenId, 1, 6);
+        await Task.Delay(2000, TestContext.Current.CancellationToken);
+
+        Assert.False(await fixture.TokenService.ConsumeAndValidate(tokenId, token));
     }
 
     [Fact]

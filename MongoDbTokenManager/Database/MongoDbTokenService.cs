@@ -99,13 +99,25 @@ namespace MongoDbTokenManager.Database
 
             await EnsureTtlIndex();
 
-            // Fetch and delete in one server round trip. Reading and then deleting let two
-            // concurrent callers both observe the same token as valid before either removed
-            // it, which is exactly what a one-time token must not allow.
             var idAsString = id.ToString();
-            var tokenInDb = await _tokenCollection.FindOneAndDeleteAsync(Builders<Tokens>.Filter.Eq(t => t.Id, idAsString));
+            var tokenInDb = await _tokenCollection.Find(Filter(id)).FirstOrDefaultAsync();
 
-            return tokenInDb?.Token.Valid(salt: idAsString, token, tokenInDb.ExpiresAt, _hashPepper) ?? false;
+            if (tokenInDb is null || !tokenInDb.Token.Valid(salt: idAsString, token, tokenInDb.ExpiresAt, _hashPepper))
+            {
+                // The stored token stays put. A wrong guess must not discard a token the
+                // legitimate holder has not had a chance to use.
+                return false;
+            }
+
+            // Claim it atomically, matching the hash just verified. If a concurrent caller got
+            // there first the delete matches nothing and this call reports failure, so a token
+            // can still only ever be consumed once. Matching on the hash also leaves a token
+            // issued by a Generate that raced in between untouched.
+            var claimed = await _tokenCollection.FindOneAndDeleteAsync(Builders<Tokens>.Filter.And(
+                Builders<Tokens>.Filter.Eq(t => t.Id, idAsString),
+                Builders<Tokens>.Filter.Eq(t => t.Token.OneTimeTokenHash, tokenInDb.Token.OneTimeTokenHash)));
+
+            return claimed is not null;
         }
 
         public override async Task<string> Generate(string logId, TokenIdentifier id, int validityInSeconds, int numberOfDigits = 0)

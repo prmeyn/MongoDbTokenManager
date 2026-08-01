@@ -137,11 +137,7 @@ Expired tokens are automatically cleaned up by MongoDB using a TTL index. By def
 
 ```csharp
 // Custom cleanup: delete tokens 1 hour after expiry
-builder.Services.AddSingleton(sp =>
-    new MongoDbTokenService(
-        sp.GetRequiredService<MongoService>(),
-        cleanupAfterExpiry: TimeSpan.FromHours(1)
-    ));
+builder.Services.AddMongoDbTokenServices(cleanupAfterExpiry: TimeSpan.FromHours(1));
 ```
 
 Set to `TimeSpan.Zero` to delete tokens immediately upon expiry.
@@ -155,14 +151,10 @@ By default a token is stored as a SHA-512 digest of the identifier and the token
 Pass a `hashPepper` to key the digest with a secret that lives outside the database (HMAC-SHA512), which makes that offline search infeasible:
 
 ```csharp
-builder.Services.AddSingleton(sp =>
-    new MongoDbTokenService(
-        sp.GetRequiredService<MongoService>(),
-        hashPepper: builder.Configuration["TokenHashPepper"]
-    ));
+builder.Services.AddMongoDbTokenServices(hashPepper: builder.Configuration["TokenHashPepper"]);
 ```
 
-Keep the pepper in a secret store, not in `appsettings.json`. Note that **tokens issued before you add a pepper — or with a different one — will stop validating**, so roll it out when no tokens are in flight, or accept that outstanding tokens must be reissued.
+Keep the pepper in a secret store — user secrets, an environment variable or a key vault — not in `appsettings.json`. Note that **tokens issued before you add a pepper — or with a different one — will stop validating**, so roll it out when no tokens are in flight, or accept that outstanding tokens must be reissued.
 
 ## Contributing
 

@@ -8,7 +8,7 @@ namespace MongoDbTokenManager.Database
 	public sealed class MongoDbTokenService : AbstractTokenService
     {
         private const int IndexOptionsConflictErrorCode = 85;
-        private const string TtlIndexName = "ExpiresAt_ttl";
+        private const int IndexKeySpecsConflictErrorCode = 86;
 
         private readonly IMongoCollection<Tokens> _tokenCollection;
         private readonly string? _hashPepper;
@@ -47,31 +47,25 @@ namespace MongoDbTokenManager.Database
                     return;
                 }
 
+                // Deliberately unnamed, so the driver derives "ExpiresAt_1" - the name every
+                // release up to 10.1.0 produced. Requesting the same key pattern under any
+                // other name is a conflict on a collection that already has this index.
                 var indexModel = new CreateIndexModel<Tokens>(
                     Builders<Tokens>.IndexKeys.Ascending(t => t.ExpiresAt),
-                    new CreateIndexOptions { Name = TtlIndexName, ExpireAfter = _ttlExpiry }
+                    new CreateIndexOptions { ExpireAfter = _ttlExpiry }
                 );
 
                 try
                 {
                     await _tokenCollection.Indexes.CreateOneAsync(indexModel);
                 }
-                catch (MongoCommandException e) when (e.Code == IndexOptionsConflictErrorCode)
+                catch (MongoCommandException e) when (e.Code is IndexOptionsConflictErrorCode or IndexKeySpecsConflictErrorCode)
                 {
-                    // The index exists with a different expireAfterSeconds. MongoDB refuses to
-                    // recreate it, so amend it in place instead. Without this, passing a
+                    // An index on ExpiresAt already exists with different options. MongoDB
+                    // refuses to recreate it, so amend it in place. Without this, passing a
                     // cleanupAfterExpiry that differs from the one the collection was created
                     // with - which README documents doing - would throw on every call.
-                    await _tokenCollection.Database.RunCommandAsync<BsonDocument>(new BsonDocument
-                    {
-                        { "collMod", _tokenCollection.CollectionNamespace.CollectionName },
-                        { "index", new BsonDocument
-                            {
-                                { "name", TtlIndexName },
-                                { "expireAfterSeconds", _ttlExpiry.TotalSeconds }
-                            }
-                        }
-                    });
+                    await AmendTtlOnExistingIndex();
                 }
 
                 _ttlIndexReady = true;
@@ -80,6 +74,43 @@ namespace MongoDbTokenManager.Database
             {
                 _ttlIndexGate.Release();
             }
+        }
+
+        /// <summary>
+        /// Points collMod at whatever the existing ExpiresAt index is actually called. The name
+        /// cannot be assumed: releases up to 10.1.0 created it unnamed, so the server called it
+        /// "ExpiresAt_1", while 10.2.0 named it "ExpiresAt_ttl". collMod addresses an index by
+        /// name and fails on a name that is not there, so guessing wrong turned every call into
+        /// an exception for anyone upgrading an existing database.
+        /// </summary>
+        private async Task AmendTtlOnExistingIndex()
+        {
+            using var cursor = await _tokenCollection.Indexes.ListAsync();
+            var indexes = await cursor.ToListAsync();
+
+            var existing = indexes.FirstOrDefault(index =>
+                index.TryGetValue("key", out var key)
+                && key is BsonDocument keyDocument
+                && keyDocument.ElementCount == 1
+                && keyDocument.Contains(nameof(Tokens.ExpiresAt)));
+
+            if (existing is null || !existing.TryGetValue("name", out var name))
+            {
+                // Nothing on ExpiresAt to amend. The conflict was about something else, so
+                // leave the collection alone rather than inventing an index.
+                return;
+            }
+
+            await _tokenCollection.Database.RunCommandAsync<BsonDocument>(new BsonDocument
+            {
+                { "collMod", _tokenCollection.CollectionNamespace.CollectionName },
+                { "index", new BsonDocument
+                    {
+                        { "name", name.AsString },
+                        { "expireAfterSeconds", _ttlExpiry.TotalSeconds }
+                    }
+                }
+            });
         }
 
         private static FilterDefinition<Tokens> FilterById(string idAsString) => Builders<Tokens>.Filter.Eq(t => t.Id, idAsString);

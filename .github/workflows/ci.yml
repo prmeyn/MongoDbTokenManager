@@ -1,0 +1,52 @@
+# Build and test every pull request (including Dependabot's) and every push to main.
+# Publishing stays in release.yml, which is tag-driven and holds the id-token; this job holds
+# nothing and needs nothing.
+
+name: Build and Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+# Pushing again to a pull request makes the in-flight run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The job id is the status-check name GitHub reports ("build"). If branch protection ever
+  # requires it, renaming this key makes the required check silently never arrive.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    # The integration tests default to mongodb://localhost:27017 (MONGODB_CONNECTION_STRING
+    # overrides it), so a real server is provided rather than letting them fail or skip.
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 10s
+    steps:
+    - name: Checkout
+      # Pinned to a commit SHA rather than a tag: a tag can be repointed. The comment records the
+      # human-readable version, and Dependabot keeps both up to date.
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+    - name: Build
+      # No setup-dotnet step, matching release.yml: the runner's preinstalled SDK is the one that
+      # publishes, so a green pull request means the release toolchain can build it too.
+      #
+      # /warnaserror keeps the build at its current 0 warnings: a new warning (from a dependency
+      # bump, say) turns the pull request red instead of landing unread in a log.
+      run: dotnet build MongoDbTokenManager.sln --configuration Release /warnaserror
+    - name: Test
+      run: dotnet test MongoDbTokenManager.sln --configuration Release --no-build
